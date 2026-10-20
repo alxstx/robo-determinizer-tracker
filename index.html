@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Robo-Determinizer tracker</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #222222;
+    --muted: #6b6b6b;
+    --line: #e2e2e2;
+    --head: #f6f6f6;
+    --field: #ffffff;
+    --late: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1b1b;
+      --fg: #e4e4e4;
+      --muted: #9a9a9a;
+      --line: #333333;
+      --head: #242424;
+      --field: #1f1f1f;
+      --late: #f08a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 72rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+  .top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .5rem 1rem;
+         border-bottom: 1px solid var(--line); padding-bottom: .75rem; margin-bottom: 1rem; }
+  h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
+  h2 { font-size: 1rem; font-weight: 600; margin: 2rem 0 .6rem; }
+  .meta { color: var(--muted); font-size: 12px; }
+  .tools { display: flex; gap: .4rem; }
+  button, select, textarea, input { font: inherit; color: var(--fg); }
+  button { background: var(--head); border: 1px solid var(--line); border-radius: 3px; padding: .2rem .6rem; cursor: pointer; font-size: 12px; }
+  button.link { background: none; border: none; padding: 0; color: var(--muted); text-decoration: underline; }
+  button.link.armed { color: var(--late); }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 1.25rem; table-layout: fixed; }
+  th, td { border: 1px solid var(--line); padding: .4rem .5rem; vertical-align: top; text-align: left; }
+  thead th { background: var(--head); font-weight: 600; }
+  thead th .when { font-weight: normal; color: var(--muted); margin-left: .5rem; }
+  thead th .count { float: right; font-weight: normal; color: var(--muted); }
+  thead th .goal { display: block; font-weight: normal; color: var(--muted); font-size: 12px; margin-top: .1rem; }
+  thead tr.cols th { font-weight: normal; color: var(--muted); font-size: 12px; padding: .25rem .5rem; }
+  col.c-task { width: 42%; } col.c-status { width: 8rem; }
+  col.c-title { width: 30%; } col.c-pg { width: 6.5rem; } col.c-date { width: 9rem; } col.c-x { width: 4.5rem; }
+  .t { font-weight: 500; }
+  .d { color: var(--muted); font-size: 12.5px; margin-top: .1rem; }
+  tr.is-done .t { text-decoration: line-through; color: var(--muted); }
+  select, input { width: 100%; background: var(--field); border: 1px solid var(--line); border-radius: 3px; padding: .1rem .25rem; font-size: 13px; }
+  input.title { font-weight: 500; margin-bottom: .25rem; }
+  textarea { width: 100%; min-height: 1.7rem; resize: vertical; background: var(--field); border: 1px solid var(--line);
+             border-radius: 3px; padding: .25rem .35rem; font-size: 13px; line-height: 1.4; display: block; }
+  textarea.sections { font-size: 12.5px; color: var(--muted); }
+  .stamp { color: var(--muted); font-size: 11px; margin-top: .15rem; }
+  .stamp:empty { display: none; }
+  .pg { display: flex; align-items: center; gap: .25rem; white-space: nowrap; }
+  .pg input { width: 2.6rem; padding: .1rem .15rem; }
+  .lbl { display: block; color: var(--muted); font-size: 11px; margin-bottom: .1rem; }
+  .lbl + input { margin-bottom: .3rem; }
+  tfoot td { background: var(--head); color: var(--muted); font-size: 12px; }
+  tfoot button { float: right; }
+  .foot { color: var(--muted); font-size: 12px; }
+
+  @media (max-width: 720px) {
+    table, tbody, tfoot, tr, td { display: block; width: 100%; }
+    colgroup, thead tr.cols { display: none; }
+    thead, thead tr, thead th { display: block; width: 100%; }
+    tbody tr, tfoot tr { border: 1px solid var(--line); border-top: none; padding: .4rem .5rem; }
+    tbody td, tfoot td { border: none; padding: .15rem 0; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div>
+      <h1>Robo-Determinizer - tracker</h1>
+    </div>
+    <div class="tools">
+      <button id="export" type="button">Export</button>
+      <button id="import" type="button">Import</button>
+      <input id="file" type="file" accept="application/json" hidden>
+    </div>
+  </div>
+
+  <h2>Implementation</h2>
+  <div id="goals"></div>
+
+  <h2>Thesis</h2>
+  <div id="thesis"></div>
+</main>
+<script>
+// Each task: [name, what it is]. Dates are set per goal; empty = not scheduled yet.
+var GOALS = [
+  { id: "tool", title: "Toolchain check", from: "2026-10-28", to: "2026-11-04",
+    goal: "Confirm the verification tools work before anything is built on them.",
+    tasks: [
+      ["Set up α,β-CROWN", "Own conda env on a cloud or lab GPU; run one of the bundled examples."],
+      ["Verify a toy network", "Small ReLU net with normalization, tanh and action scaling, exported to ONNX; α,β-CROWN proves an output box. Shows every operation of our graph is supported."],
+      ["Set up dReal", "Official Docker image; solve a simple nonlinear query from Python."],
+      ["Test the FK error query", "Bound a tiny FK network against the analytic kinematics of a 2-3 joint Panda prefix. Record runtime vs. box size and how often δ-sat appears; this decides how small regions must be."]
+    ]},
+  { id: "env", title: "Environment", from: "2026-11-04", to: "2026-12-02",
+    goal: "A Gymnasium environment that produces and logs all three violation types.",
+    tasks: [
+      ["Scene", "Menagerie Panda plus a human of three capsules (head, torso, arm), moved as mocap bodies between random waypoints with speed ≤ v_h,max."],
+      ["Action and control", "Policy outputs a joint step Δq_t; the setpoint q_t + Δq_t goes to the position actuators at about 20 Hz."],
+      ["Observation and reward", "Observes joint positions and velocities, target and capsule poses. Rewards reaching the target only, no safety shaping."],
+      ["Distance computation", "Minimum distance between robot link capsules/spheres and human capsules (segment to segment), checked against MuJoCo."],
+      ["Violation logger", "Counts joint-limit, step and distance violations on the raw policy output, before any clipping or MuJoCo clamping."],
+      ["Tests", "Unit tests for limits, distances and seeded determinism; random-policy rollouts show all three violation types."]
+    ]},
+  { id: "teacher", title: "Teacher policy", from: "2026-12-02", to: "2027-01-07",
+    goal: "A TQC policy that mostly reaches the target but sometimes breaks the rules. Long training runs go over the holidays.",
+    tasks: [
+      ["Train TQC", "SB3-Contrib TQC, RL Zoo hyperparameters as a start, observation normalization, several seeds."],
+      ["Export the deterministic policy", "One ONNX graph: normalization → actor → mean → tanh → scaling to Δq. Must match SB3 predict(deterministic=True) and load in α,β-CROWN."],
+      ["Baseline evaluation", "1000 episodes with random targets and human motion: violation table and success rate. The number the pipeline has to beat."]
+    ]},
+  { id: "surr", title: "Surrogates and FK network", from: "2027-01-07", to: "2027-02-07",
+    goal: "Small networks that are fast enough to verify.",
+    tasks: [
+      ["Define regions", "3-6 input boxes (joint ranges × human position × target) that conservatively cover the regions by human distance, joint margin and workspace zone."],
+      ["FK network", "Small net from joint setpoints to the positions of the distance-relevant points (links 3-7, hand); checked numerically against MuJoCo and Pinocchio."],
+      ["Distill surrogates", "One small ReLU net per region (2×16 to 2×64), trained to imitate the teacher on samples covering the whole box plus teacher rollouts."],
+      ["FK error bound", "dReal proves ‖f_FK(q) − FK(q)‖ ≤ ε_FK per region against the analytic Panda kinematics. Only unsat counts; on δ-sat or timeout split the region or enlarge ε_FK."]
+    ]},
+  { id: "verify", title: "Verification", from: "2027-02-07", to: "2027-02-21",
+    goal: "Decide per region which properties are proven.",
+    tasks: [
+      ["Setpoint and step proofs", "α,β-CROWN proves q_min ≤ q_t + Δq_t ≤ q_max and ‖Δq_t‖∞ ≤ Δ_max over each box."],
+      ["Teacher-difference bound", "Teacher and surrogate in one graph; α,β-CROWN bounds the maximum output difference ε_i. Reported as imitation fidelity, not safety."],
+      ["Distance proof", "Graph surrogate → setpoint → FK net; proves distance ≥ d_min + ε_FK + v_h,max·Δt for all robot parts and human capsules, at sampling instants."],
+      ["Marabou cross-checks", "Re-check a few queries per property with identical encoding (output bounds mapped through atanh onto the ReLU part)."],
+      ["Certificate registry", "One JSON per region: proof results, bounds, tool versions, runtimes, network hashes. Certified only if every proof is present; any weight change voids it."]
+    ]},
+  { id: "gate", title: "Gate and fallback", from: "2027-02-21", to: "2027-02-28",
+    goal: "Run only certified surrogates and switch safely everywhere else.",
+    tasks: [
+      ["Region gate", "Checks membership in exactly the verified boxes, conservative at the edges, with hysteresis when switching back."],
+      ["Fallback controller", "Holds the current setpoint, which keeps joint limits and step bound by construction."],
+      ["Switching checks", "Formal check that switching in either direction never exceeds joint limits or Δ_max; distance behaviour tested in simulation."],
+      ["Gate variant", "Separate configuration for the evaluation; definition agreed with the supervisor."]
+    ]},
+  { id: "bo", title: "Boundary-case search", from: "2027-02-28", to: "2027-03-14",
+    goal: "Find violations where nothing is proven.",
+    tasks: [
+      ["Violation score", "One scalar per rollout that combines the three properties."],
+      ["BoTorch search", "GP with Matérn-5/2 kernel and qLogEI over target, human pose and motion, and noise; about 200-400 evaluations per uncertified region."],
+      ["Counterexample sets", "Store violating contexts and the largest violation found. Empirical only, no worst-case bound."]
+    ]},
+  { id: "retrain", title: "Retraining loop", from: "2027-03-14", to: "2027-03-28",
+    goal: "Use counterexamples to grow the certified part of the space.",
+    tasks: [
+      ["Retraining loss", "Closeness to the teacher plus a penalty for constraint violations on counterexamples from verification and BO. The teacher stays unchanged."],
+      ["Re-verification", "After every weight change, rerun all proofs for the affected region; the old certificate is void."],
+      ["Stopping and logging", "Stop at enough coverage, an iteration cap, or two rounds without improvement. Log coverage per iteration (RQ2)."]
+    ]},
+  { id: "rpcbf", title: "Baselines for comparison", from: "2027-03-28", to: "2027-04-14",
+    goal: "Other safety approaches on the same task, to show what this pipeline adds.",
+    tasks: [
+      ["Choose baselines", "RPCBF (online safety filter, required by the task description) plus optional others, e.g. simple clipping and stop rule, classic CBF-QP filter."],
+      ["Common interface", "Every baseline sees the same observation and outputs or corrects Δq; same episodes, seeds and violation logger."],
+      ["Adapt and run", "Adapt each baseline to the Panda, position control and capsule human. Document every change; no formal claim for any adaptation."]
+    ]},
+  { id: "ext", title: "Extensions", from: "2027-04-14", to: "2027-05-14",
+    goal: "Add depth if on schedule; otherwise this period is buffer.",
+    tasks: [
+      ["Select extensions", "Pick one or two that fit the remaining time: ablations over surrogate and region size, RL fine-tuning, tracking-error bound, GenBaB instead of dReal, more regions."],
+      ["Implement and evaluate", "Only the chosen extensions."]
+    ]},
+  { id: "eval", title: "Final evaluation", from: "2027-05-14", to: "2027-06-09",
+    goal: "Answer RQ1-RQ4 with final numbers.",
+    tasks: [
+      ["Final runs", "Teacher, gate variant, RPCBF, full pipeline × normal, near-boundary and out-of-distribution contexts, several seeds."],
+      ["Metrics", "Violations by type, goal reaching, runtime per step, offline compute."],
+      ["Tables and plots", "Each layer's contribution reported separately."],
+      ["Reproducibility package", "Scripts, configs, seeds, certificate registry, README."]
+    ]}
+];
+
+var DEFAULT_CHAPTERS = [
+  { title: "Introduction", sections: "Motivation, problem, research questions, contributions, structure",
+    target: 4, start: "2026-11-02", due: "2026-11-27" },
+  { title: "Background and related work", sections: "NN verification and bound propagation · SMT over the reals, δ-decidability · safety filters, CBFs, runtime assurance · counterexample-guided training, model reduction · falsification, Bayesian optimization · human-robot safety",
+    target: 14, start: "2026-11-02", due: "2027-01-29" }
+];
+
+var STATUS = ["Not started", "In progress", "Blocked", "Done"];
+var THESIS_STATUS = ["Not started", "Outline", "Drafting", "Draft done", "Revised", "Final"];
+var KEY = "robodet-tracker-v2";
+
+function load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+var state = load();
+if (!Array.isArray(state.chapters)) state.chapters = DEFAULT_CHAPTERS.map(function (c) { return Object.assign({}, c); });
+
+var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function parse(iso) { var p = iso.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+function fmt(iso, withDay) { var d = parse(iso); return (withDay ? DAYS[d.getDay()] + " " : "") + d.getDate() + " " + MONTHS[d.getMonth()]; }
+function today() { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function el(tag, attrs, text) { var e = document.createElement(tag); for (var k in attrs || {}) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; }
+function cols(t, list) { var cg = el("colgroup"); list.forEach(function (c) { cg.appendChild(el("col", c ? { "class": c } : {})); }); t.appendChild(cg); }
+function rec(id) { return state[id] || (state[id] = {}); }
+
+function statusSelect(options, value) {
+  var sel = el("select", { "aria-label": "Status" });
+  options.forEach(function (o) { var op = el("option", { value: o }, o); if ((value || options[0]) === o) op.selected = true; sel.appendChild(op); });
+  return sel;
+}
+// Note cell bound to object r; touch() stamps and saves.
+function noteCell(r, onChange) {
+  var td = el("td");
+  var ta = el("textarea", { rows: 1, placeholder: "Update note", "aria-label": "Update note" }); ta.value = r.note || "";
+  var stamp = el("div", { "class": "stamp" }, r.updated ? "updated " + fmt(r.updated) : "");
+  td.appendChild(ta); td.appendChild(stamp);
+  td.touch = function () { r.updated = today(); stamp.textContent = "updated " + fmt(r.updated); save(); if (onChange) onChange(); };
+  ta.addEventListener("input", function () { r.note = ta.value; td.touch(); });
+  return td;
+}
+
+function renderGoals() {
+  var root = document.getElementById("goals"); root.innerHTML = "";
+  GOALS.forEach(function (g) {
+    var t = el("table"); cols(t, ["c-task", "c-status", ""]);
+    var th = el("th", { colspan: 3 }); th.appendChild(document.createTextNode(g.title));
+    th.appendChild(el("span", { "class": "when" }, g.from ? fmt(g.from) + " - " + fmt(g.to) : "dates to be set"));
+    var count = el("span", { "class": "count" }); th.appendChild(count);
+    th.appendChild(el("span", { "class": "goal" }, g.goal));
+    var thead = el("thead"), hr = el("tr"); hr.appendChild(th); thead.appendChild(hr); t.appendChild(thead);
+    var tb = el("tbody");
+    function updateCount() {
+      var done = g.tasks.filter(function (_, i) { return (state[g.id + "." + i] || {}).status === "Done"; }).length;
+      count.textContent = done + " / " + g.tasks.length + " done";
+    }
+    g.tasks.forEach(function (task, i) {
+      var r = rec(g.id + "." + i), tr = el("tr");
+      var tdT = el("td"); tdT.appendChild(el("div", { "class": "t" }, task[0])); tdT.appendChild(el("div", { "class": "d" }, task[1]));
+      var sel = statusSelect(STATUS, r.status), tdS = el("td"); tdS.appendChild(sel);
+      var tdN = noteCell(r, updateCount);
+      function mark() { tr.classList.toggle("is-done", (r.status || "") === "Done"); }
+      sel.addEventListener("change", function () { r.status = sel.value; mark(); tdN.touch(); });
+      mark();
+      tr.appendChild(tdT); tr.appendChild(tdS); tr.appendChild(tdN); tb.appendChild(tr);
+    });
+    t.appendChild(tb); root.appendChild(t); updateCount();
+  });
+}
+
+function renderThesis() {
+  var root = document.getElementById("thesis"); root.innerHTML = "";
+  var t = el("table"); cols(t, ["c-title", "c-pg", "c-date", "c-status", "", "c-x"]);
+  var thead = el("thead"), hr = el("tr", { "class": "cols" });
+  ["Chapter and sections", "Pages", "Dates", "Status", "Update note", ""].forEach(function (h) { hr.appendChild(el("th", {}, h)); });
+  thead.appendChild(hr); t.appendChild(thead);
+  var tb = el("tbody"), totalCell = el("td", { colspan: 6 }), totalText = el("span");
+  function updateTotal() {
+    var target = 0, written = 0, final = 0;
+    state.chapters.forEach(function (c) { target += Number(c.target) || 0; written += Number(c.written) || 0; if (c.status === "Final") final++; });
+    totalText.textContent = written + " of " + target + " pages written · " + final + " / " + state.chapters.length + " chapters final";
+  }
+  state.chapters.forEach(function (c, i) {
+    var tr = el("tr"), tdN = noteCell(c, updateTotal);
+    function input(attrs, key, cls) {
+      var inp = el("input", attrs); if (cls) inp.className = cls; inp.value = c[key] == null ? "" : c[key];
+      inp.addEventListener("input", function () { c[key] = inp.value; tdN.touch(); }); return inp;
+    }
+    var tdT = el("td");
+    tdT.appendChild(input({ type: "text", "aria-label": "Chapter title", placeholder: "Chapter title" }, "title", "title"));
+    var sec = el("textarea", { rows: 3, "aria-label": "Sections", placeholder: "Sections" }); sec.className = "sections"; sec.value = c.sections || "";
+    sec.addEventListener("input", function () { c.sections = sec.value; tdN.touch(); }); tdT.appendChild(sec);
+    var tdP = el("td"), pg = el("div", { "class": "pg" });
+    pg.appendChild(input({ type: "number", min: 0, "aria-label": "Pages written", title: "Pages written" }, "written"));
+    pg.appendChild(document.createTextNode("/"));
+    pg.appendChild(input({ type: "number", min: 0, "aria-label": "Target pages", title: "Target pages" }, "target"));
+    tdP.appendChild(pg);
+    var tdD = el("td");
+    tdD.appendChild(el("span", { "class": "lbl" }, "start")); tdD.appendChild(input({ type: "date", "aria-label": "Start" }, "start"));
+    tdD.appendChild(el("span", { "class": "lbl" }, "first draft due")); tdD.appendChild(input({ type: "date", "aria-label": "First draft due" }, "due"));
+    var sel = statusSelect(THESIS_STATUS, c.status), tdS = el("td"); tdS.appendChild(sel);
+    sel.addEventListener("change", function () { c.status = sel.value; tdN.touch(); });
+    var tdX = el("td"), rm = el("button", { type: "button", "class": "link" }, "Remove");
+    rm.addEventListener("click", function () {
+      if (!rm.classList.contains("armed")) { rm.classList.add("armed"); rm.textContent = "Confirm"; setTimeout(function () { rm.classList.remove("armed"); rm.textContent = "Remove"; }, 3000); return; }
+      state.chapters.splice(i, 1); save(); renderThesis();
+    });
+    tdX.appendChild(rm);
+    [tdT, tdP, tdD, tdS, tdN, tdX].forEach(function (td) { tr.appendChild(td); });
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb);
+  var add = el("button", { type: "button" }, "+ Add chapter");
+  add.addEventListener("click", function () { state.chapters.push({ title: "", sections: "", target: "", start: "", due: "" }); save(); renderThesis(); });
+  totalCell.appendChild(totalText); totalCell.appendChild(add);
+  var tf = el("tfoot"), fr = el("tr"); fr.appendChild(totalCell); tf.appendChild(fr); t.appendChild(tf);
+  root.appendChild(t); updateTotal();
+}
+
+function render() { renderGoals(); renderThesis(); }
+
+document.getElementById("export").addEventListener("click", function () {
+  var blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  var a = el("a", { href: URL.createObjectURL(blob), download: "tracker-" + today() + ".json" });
+  document.body.appendChild(a); a.click(); a.remove();
+});
+document.getElementById("import").addEventListener("click", function () { document.getElementById("file").click(); });
+document.getElementById("file").addEventListener("change", function (e) {
+  var f = e.target.files[0]; if (!f) return;
+  f.text().then(function (txt) {
+    try { state = JSON.parse(txt) || {}; if (!Array.isArray(state.chapters)) state.chapters = []; save(); render(); }
+    catch (err) { console.error("Import failed", err); }
+  });
+  e.target.value = "";
+});
+render();
+</script>
+</body>
+</html>
