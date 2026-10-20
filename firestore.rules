@@ -1,0 +1,12 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Anyone can read the tracker; only the owner can change it.
+    match /trackers/main {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.auth.token.email == "stepanovalexander702@gmail.com"
+                   && request.auth.token.email_verified == true;
+    }
+  }
+}

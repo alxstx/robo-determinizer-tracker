@@ -67,7 +67,9 @@
   .lbl + input { margin-bottom: .3rem; }
   tfoot td { background: var(--head); color: var(--muted); font-size: 12px; }
   tfoot button { float: right; }
-  .foot { color: var(--muted); font-size: 12px; }
+  fieldset#content { border: 0; margin: 0; padding: 0; min-width: 0; }
+  .auth { color: var(--muted); font-size: 12px; align-self: center; }
+  .loading { color: var(--muted); padding: 2rem 0; }
 
   @media (max-width: 720px) {
     table, tbody, tfoot, tr, td { display: block; width: 100%; }
@@ -85,19 +87,39 @@
       <h1>Robo-Determinizer - tracker</h1>
     </div>
     <div class="tools">
+      <span class="auth" id="status"></span>
       <button id="export" type="button">Export</button>
-      <button id="import" type="button">Import</button>
+      <button id="import" type="button" hidden>Import</button>
+      <button id="signin" type="button">Sign in</button>
       <input id="file" type="file" accept="application/json" hidden>
     </div>
   </div>
+  <p class="loading" id="loading">Loading...</p>
+  <fieldset id="content" disabled hidden>
+    <h2>Implementation</h2>
+    <div id="goals"></div>
 
-  <h2>Implementation</h2>
-  <div id="goals"></div>
-
-  <h2>Thesis</h2>
-  <div id="thesis"></div>
+    <h2>Thesis</h2>
+    <div id="thesis"></div>
+  </fieldset>
 </main>
-<script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// Public web config (access is controlled by firestore.rules, not by this key).
+const FIREBASE_CONFIG = {
+  "projectId": "robo-determinizer-tracke-d2b3d",
+  "appId": "1:16625136052:web:db9701c7956e3bbc40c2e1",
+  "storageBucket": "robo-determinizer-tracke-d2b3d.firebasestorage.app",
+  "apiKey": "AIzaSyDuxOD49aRsUk3PABeegNVuC1LUHIT2k54",
+  "authDomain": "robo-determinizer-tracke-d2b3d.firebaseapp.com",
+  "messagingSenderId": "16625136052"
+};
+// Only this account may edit; must match firestore.rules.
+const OWNER_EMAIL = "stepanovalexander702@gmail.com";
+
 // Each task: [name, what it is]. Dates are set per goal; empty = not scheduled yet.
 var GOALS = [
   { id: "tool", title: "Toolchain check", from: "2026-10-28", to: "2026-11-04",
@@ -194,14 +216,35 @@ var DEFAULT_CHAPTERS = [
     target: 14, start: "2026-11-02", due: "2027-01-29" }
 ];
 
+
 var STATUS = ["Not started", "In progress", "Blocked", "Done"];
 var THESIS_STATUS = ["Not started", "Outline", "Drafting", "Draft done", "Revised", "Final"];
-var KEY = "robodet-tracker-v2";
+var LEGACY_KEY = "robodet-tracker-v2";
 
-function load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } }
-function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
-var state = load();
-if (!Array.isArray(state.chapters)) state.chapters = DEFAULT_CHAPTERS.map(function (c) { return Object.assign({}, c); });
+const app = initializeApp(FIREBASE_CONFIG);
+const auth = getAuth(app);
+const ref = doc(getFirestore(app), "trackers", "main");
+
+var state = null, exists = false, canEdit = false, pending = false, saveTimer = null;
+var edits = 0, savedEdits = 0; // local edits not yet confirmed by the server
+var content = document.getElementById("content"), statusEl = document.getElementById("status");
+
+function defaults() { return { chapters: DEFAULT_CHAPTERS.map(function (c) { return Object.assign({}, c); }) }; }
+function legacy() { try { return JSON.parse(localStorage.getItem(LEGACY_KEY)); } catch (e) { return null; } }
+function normalize(s) { s = s || {}; if (!Array.isArray(s.chapters)) s.chapters = defaults().chapters; return s; }
+
+function setStatus(text) { statusEl.textContent = text; }
+function save() {
+  if (!canEdit) return;
+  setStatus("Saving...");
+  var n = ++edits;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(function () {
+    setDoc(ref, JSON.parse(JSON.stringify(state)))
+      .then(function () { exists = true; savedEdits = Math.max(savedEdits, n); if (savedEdits === edits) setStatus("Saved"); })
+      .catch(function (err) { console.error(err); setStatus("Not saved: " + err.code); });
+  }, 600);
+}
 
 var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -305,23 +348,61 @@ function renderThesis() {
   root.appendChild(t); updateTotal();
 }
 
-function render() { renderGoals(); renderThesis(); }
+function render() {
+  if (!state) return;
+  document.getElementById("loading").hidden = true;
+  content.hidden = false;
+  renderGoals(); renderThesis();
+}
+// Don't redraw under the cursor; apply remote changes once the field loses focus.
+function renderWhenIdle() {
+  if (content.contains(document.activeElement)) { pending = true; return; }
+  pending = false; render();
+}
+content.addEventListener("focusout", function () { setTimeout(function () { if (pending) renderWhenIdle(); }, 0); });
 
+function applyAccess(user) {
+  canEdit = !!user && user.email === OWNER_EMAIL;
+  content.disabled = !canEdit;
+  document.getElementById("import").hidden = !canEdit;
+  document.getElementById("signin").textContent = user ? "Sign out" : "Sign in";
+  setStatus(user ? (canEdit ? "Editing as " + user.email : user.email + " can only view") : "View only");
+  // First owner visit: seed the shared document from this browser's old local data.
+  if (canEdit && state && !exists) { state = normalize(legacy() || state); render(); save(); }
+}
+
+onSnapshot(ref, function (snap) {
+  // Ignore echoes while this browser still has unsaved edits, so they are not overwritten.
+  if (snap.metadata.hasPendingWrites || savedEdits !== edits) return;
+  exists = snap.exists();
+  state = normalize(exists ? snap.data() : (state || defaults()));
+  renderWhenIdle();
+  if (canEdit && !exists) applyAccess(auth.currentUser);
+}, function (err) {
+  console.error(err);
+  document.getElementById("loading").textContent = "Could not load the tracker (" + err.code + ").";
+});
+onAuthStateChanged(auth, applyAccess);
+
+document.getElementById("signin").addEventListener("click", function () {
+  if (auth.currentUser) signOut(auth);
+  else signInWithPopup(auth, new GoogleAuthProvider()).catch(function (err) { console.error(err); setStatus("Sign-in failed: " + err.code); });
+});
 document.getElementById("export").addEventListener("click", function () {
+  if (!state) return;
   var blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
   var a = el("a", { href: URL.createObjectURL(blob), download: "tracker-" + today() + ".json" });
   document.body.appendChild(a); a.click(); a.remove();
 });
 document.getElementById("import").addEventListener("click", function () { document.getElementById("file").click(); });
 document.getElementById("file").addEventListener("change", function (e) {
-  var f = e.target.files[0]; if (!f) return;
+  var f = e.target.files[0]; if (!f || !canEdit) return;
   f.text().then(function (txt) {
-    try { state = JSON.parse(txt) || {}; if (!Array.isArray(state.chapters)) state.chapters = []; save(); render(); }
-    catch (err) { console.error("Import failed", err); }
+    try { state = normalize(JSON.parse(txt)); render(); save(); }
+    catch (err) { console.error("Import failed", err); setStatus("Import failed"); }
   });
   e.target.value = "";
 });
-render();
 </script>
 </body>
 </html>
