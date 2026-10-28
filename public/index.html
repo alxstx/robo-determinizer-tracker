@@ -125,7 +125,7 @@ var GOALS = [
   { id: "tool", title: "Toolchain check", from: "2026-10-28", to: "2026-11-04",
     goal: "Confirm the verification tools work before anything is built on them.",
     tasks: [
-      ["Set up α,β-CROWN", "Own conda env on a cloud or lab GPU; run one of the bundled examples."],
+      ["Set up α,β-CROWN", "Own conda env on a rented cloud GPU; run one of the bundled examples."],
       ["Verify a toy network", "Small ReLU net with normalization, tanh and action scaling, exported to ONNX; α,β-CROWN proves an output box. Shows every operation of our graph is supported."],
       ["Set up dReal", "Official Docker image; solve a simple nonlinear query from Python."],
       ["Test the FK error query", "Bound a tiny FK network against the analytic kinematics of a 2-3 joint Panda prefix. Record runtime vs. box size and how often δ-sat appears; this decides how small regions must be."]
