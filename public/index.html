@@ -125,10 +125,10 @@ var GOALS = [
   { id: "tool", title: "Toolchain check", from: "2026-10-28", to: "2026-11-04",
     goal: "Confirm the verification tools work before anything is built on them.",
     tasks: [
-      ["Set up α,β-CROWN", "Own conda env on a rented cloud GPU; run one of the bundled examples."],
-      ["Verify a toy network", "Small ReLU net with normalization, tanh and action scaling, exported to ONNX; α,β-CROWN proves an output box. Shows every operation of our graph is supported."],
-      ["Set up dReal", "Official Docker image; solve a simple nonlinear query from Python."],
-      ["Test the FK error query", "Bound a tiny FK network against the analytic kinematics of a 2-3 joint Panda prefix. Record runtime vs. box size and how often δ-sat appears; this decides how small regions must be."]
+      ["Set up α,β-CROWN", "Own conda env (abcrown, Python 3.11) on the CPU of the Mac; no GPU needed so far."],
+      ["Verify against VNN-COMP", "All 296 VNN-COMP 2022 rl_benchmarks properties (cartpole, lunarlander, dubinsrejoin): 193 proven, 103 counterexamples, 296/296 published results reproduced, < 0.5 s each. The observation clip must be exported as ReLUs."],
+      ["Set up dReal", "Official Docker image dreal/dreal4 (amd64, emulated on Apple Silicon); queries generated from Python."],
+      ["Test distance queries on the analytic FK", "dReal checks the robot-human distance directly on the analytic FK of a 2-4 joint Panda prefix (points and forearm capsules); runtime recorded vs. joint box size. Points proven up to ±46°, capsules up to ±23° with generous margins. Bounding an FK network's error only worked up to about ±1° joint boxes, so the FK network is dropped (deviation from the task description, pending supervisor agreement)."]
     ]},
   { id: "env", title: "Environment", from: "2026-11-04", to: "2026-12-02",
     goal: "A Gymnasium environment that produces and logs all three violation types.",
@@ -147,20 +147,18 @@ var GOALS = [
       ["Export the deterministic policy", "One ONNX graph: normalization → actor → mean → tanh → scaling to Δq. Must match SB3 predict(deterministic=True) and load in α,β-CROWN."],
       ["Baseline evaluation", "1000 episodes with random targets and human motion: violation table and success rate. The number the pipeline has to beat."]
     ]},
-  { id: "surr", title: "Surrogates and FK network", from: "2027-01-07", to: "2027-02-07",
+  { id: "surr", title: "Surrogates", from: "2027-01-07", to: "2027-02-07",
     goal: "Small networks that are fast enough to verify.",
     tasks: [
       ["Define regions", "3-6 input boxes (joint ranges × human position × target) that conservatively cover the regions by human distance, joint margin and workspace zone."],
-      ["FK network", "Small net from joint setpoints to the positions of the distance-relevant points (links 3-7, hand); checked numerically against MuJoCo and Pinocchio."],
-      ["Distill surrogates", "One small ReLU net per region (2×16 to 2×64), trained to imitate the teacher on samples covering the whole box plus teacher rollouts."],
-      ["FK error bound", "dReal proves ‖f_FK(q) − FK(q)‖ ≤ ε_FK per region against the analytic Panda kinematics. Only unsat counts; on δ-sat or timeout split the region or enlarge ε_FK."]
+      ["Distill surrogates", "One small ReLU net per region (2×16 to 2×64), trained to imitate the teacher on samples covering the whole box plus teacher rollouts."]
     ]},
   { id: "verify", title: "Verification", from: "2027-02-07", to: "2027-02-21",
     goal: "Decide per region which properties are proven.",
     tasks: [
       ["Setpoint and step proofs", "α,β-CROWN proves q_min ≤ q_t + Δq_t ≤ q_max and ‖Δq_t‖∞ ≤ Δ_max over each box."],
       ["Teacher-difference bound", "Teacher and surrogate in one graph; α,β-CROWN bounds the maximum output difference ε_i. Reported as imitation fidelity, not safety."],
-      ["Distance proof", "Graph surrogate → setpoint → FK net; proves distance ≥ d_min + ε_FK + v_h,max·Δt for all robot parts and human capsules, at sampling instants."],
+      ["Distance proof", "Two stages per region: α,β-CROWN proves the setpoint box [q_lo, q_hi] of q_t + Δq_t; dReal proves on the analytic FK that all robot and human capsules keep distance ≥ d_min + radii + v_h,max·Δt for every setpoint in the box and every human position of the region, at sampling instants. Only unsat counts."],
       ["Marabou cross-checks", "Re-check a few queries per property with identical encoding (output bounds mapped through atanh onto the ReLU part)."],
       ["Certificate registry", "One JSON per region: proof results, bounds, tool versions, runtimes, network hashes. Certified only if every proof is present; any weight change voids it."]
     ]},
